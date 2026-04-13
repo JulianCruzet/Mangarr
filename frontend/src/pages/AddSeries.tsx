@@ -73,12 +73,14 @@ function AddSeriesModal({ result, folders, alreadyAdded, onClose, onSuccess }: A
     folders[0]?.id ?? '',
   );
   const [monitorStatus, setMonitorStatus] = useState<'all' | 'future' | 'none'>('all');
+  const [provider] = useState<'mangadex' | 'mangabaka'>((result as any).metadata_provider ?? 'mangadex');
   const addToast = useNotificationStore((s) => s.addToast);
 
   const { mutate, isPending } = useMutation({
     mutationFn: () =>
       seriesApi.add({
-        mangadex_id: result.mangadex_id,
+        metadata_id: result.mangadex_id,
+        metadata_provider: provider,
         root_folder_id: Number(rootFolderId),
         monitor_status: monitorStatus,
       }),
@@ -298,6 +300,7 @@ function SearchResultCard({
 
 export function AddSeries() {
   const [query, setQuery] = useState('');
+  const [provider, setProvider] = useState<'mangadex' | 'mangabaka'>('mangadex');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [selectedResult, setSelectedResult] = useState<SearchResult | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -313,8 +316,8 @@ export function AddSeries() {
   }, [query]);
 
   const { data: results = [], isLoading: isSearching } = useQuery({
-    queryKey: ['search', debouncedQuery],
-    queryFn: () => searchApi.searchManga({ q: debouncedQuery }),
+    queryKey: ['search', debouncedQuery, provider],
+    queryFn: () => searchApi.searchManga({ q: debouncedQuery, provider }),
     enabled: debouncedQuery.trim().length >= 2,
   });
 
@@ -328,7 +331,7 @@ export function AddSeries() {
     queryFn: () => libraryApi.getFolders(),
   });
 
-  const existingIds = new Set(existingSeries.map((s) => s.mangadex_id));
+  const existingIds = new Set(existingSeries.map((s) => s.metadata_id || s.mangadex_id));
 
   const showResults = debouncedQuery.trim().length >= 2;
 
@@ -336,20 +339,32 @@ export function AddSeries() {
     <div className="flex flex-col h-full">
       <TopBar title="Add Series" />
       <PageContainer className="max-w-3xl mx-auto w-full">
-        {/* Search input */}
-        <div className="relative mb-6">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-mangarr-muted" />
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search for manga by title..."
-            autoFocus
-            className="input-base w-full pl-10 pr-4 py-3 text-sm"
-          />
-          {isSearching && (
-            <Spinner size="sm" className="absolute right-3 top-1/2 -translate-y-1/2" />
-          )}
+        {/* Search input with provider selector */}
+        <div className="space-y-3 mb-6">
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-mangarr-muted" />
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search for manga by title..."
+                autoFocus
+                className="input-base w-full pl-10 pr-4 py-3 text-sm"
+              />
+              {isSearching && (
+                <Spinner size="sm" className="absolute right-3 top-1/2 -translate-y-1/2" />
+              )}
+            </div>
+            <select
+              value={provider}
+              onChange={(e) => setProvider(e.target.value as 'mangadex' | 'mangabaka')}
+              className="select-base text-sm px-3 py-3 min-w-[140px]"
+            >
+              <option value="mangadex">MangaDex</option>
+              <option value="mangabaka">MangaBaka</option>
+            </select>
+          </div>
         </div>
 
         {/* Results */}
@@ -363,7 +378,7 @@ export function AddSeries() {
             )}
             {results.map((result) => (
               <SearchResultCard
-                key={result.mangadex_id}
+                key={`${provider}-${result.mangadex_id}`}
                 result={result}
                 existingIds={existingIds}
                 onSelect={setSelectedResult}
@@ -381,7 +396,7 @@ export function AddSeries() {
 
         {selectedResult && (
           <AddSeriesModal
-            result={selectedResult}
+            result={{...selectedResult, metadata_provider: provider}}
             folders={folders}
             alreadyAdded={existingIds.has(selectedResult.mangadex_id)}
             onClose={() => setSelectedResult(null)}

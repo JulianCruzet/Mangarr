@@ -35,9 +35,10 @@ def _get_or_create_volume(
 def _upsert_chapters(
     db: Session,
     series_id: int,
+    metadata_provider: str,
     chapters_data: list,
 ) -> None:
-    """Add new chapters from MangaDex data; skip ones already in DB."""
+    """Add new chapters from provider data; skip ones already in DB."""
     existing_ids = {
         row[0]
         for row in db.query(Chapter.mangadex_id)
@@ -46,8 +47,8 @@ def _upsert_chapters(
     }
 
     for ch in chapters_data:
-        mdx_id = ch.get("id")
-        if mdx_id in existing_ids:
+        ch_id = ch.get("id")
+        if ch_id in existing_ids:
             continue
 
         volume_number = ch.get("volume_number")
@@ -66,7 +67,8 @@ def _upsert_chapters(
         chapter = Chapter(
             series_id=series_id,
             volume_id=volume.id if volume else None,
-            mangadex_id=mdx_id,
+            metadata_provider=metadata_provider,
+            mangadex_id=ch_id if metadata_provider == "mangadex" else None,
             chapter_number=ch.get("chapter_number"),
             volume_number=volume_number,
             title=ch.get("title"),
@@ -82,18 +84,26 @@ def _upsert_chapters(
 
 async def add_series(
     db: Session,
-    mangadex_id: str,
-    root_folder_id: int,
+    metadata_id: str,
+    metadata_provider: str = "mangadex",
+    root_folder_id: int = None,
     monitor_status: str = "all",
 ) -> Series:
     """
-    Fetch manga metadata from MangaDex, persist the series, and trigger
+    Fetch manga metadata from the specified provider, persist the series, and trigger
     cover download. Returns the created Series ORM object.
     """
     settings = get_settings()
 
     # Check if already in library
-    existing = db.query(Series).filter(Series.mangadex_id == mangadex_id).first()
+    existing = (
+        db.query(Series)
+        .filter(
+            Series.metadata_provider == metadata_provider,
+            Series.metadata_id == metadata_id,
+        )
+        .first()
+    )
     if existing:
         return existing
 
@@ -102,10 +112,10 @@ async def add_series(
     if not root_folder:
         raise ValueError(f"Root folder {root_folder_id} not found")
 
-    # Fetch metadata
-    manga_data = await metadata_service.get_manga(mangadex_id)
+    # Fetch metadata from specified provider
+    manga_data = await metadata_service.get_manga(metadata_provider, metadata_id)
     if not manga_data:
-        raise ValueError(f"Manga {mangadex_id} not found on MangaDex")
+        raise ValueError(f"Manga {metadata_id} not found on {metadata_provider}")
 
     # Compute the series folder name
     series_folder_name = build_series_folder_name(
@@ -115,7 +125,9 @@ async def add_series(
     )
 
     series = Series(
-        mangadex_id=manga_data["id"],
+        mangadex_id=manga_data["id"] if metadata_provider == "mangadex" else None,
+        metadata_provider=metadata_provider,
+        metadata_id=manga_data["id"],
         title=manga_data["title"],
         alt_titles_json=manga_data.get("alt_titles_json"),
         description=manga_data.get("description"),
@@ -136,9 +148,9 @@ async def add_series(
     # Fetch and persist chapters
     try:
         chapters_data = await metadata_service.get_manga_chapters(
-            mangadex_id, lang=settings.DEFAULT_LANGUAGE
+            metadata_provider, metadata_id, lang=settings.DEFAULT_LANGUAGE
         )
-        _upsert_chapters(db, series.id, chapters_data)
+        _upsert_chapters(db, series.id, metadata_provider, chapters_data)
     except Exception:
         pass  # Chapter fetch failure is non-fatal for adding a series
 
@@ -149,7 +161,7 @@ async def add_series(
     if manga_data.get("cover_filename"):
         try:
             await metadata_service.download_cover(
-                manga_data["id"], manga_data["cover_filename"]
+                metadata_provider, manga_data["id"], manga_data.get("cover_filename") or manga_data.get("cover_url")
             )
         except Exception:
             pass
@@ -166,7 +178,7 @@ async def add_series(
 
 async def refresh_series(db: Session, series_id: int) -> Series:
     """
-    Re-fetch MangaDex metadata for a series, add new chapters, update fields.
+    Re-fetch metadata for a series from its provider, add new chapters, update fields.
     """
     settings = get_settings()
 
@@ -174,9 +186,13 @@ async def refresh_series(db: Session, series_id: int) -> Series:
     if not series:
         raise ValueError(f"Series {series_id} not found")
 
-    manga_data = await metadata_service.get_manga(series.mangadex_id)
+    # Use the provider stored with the series
+    provider = series.metadata_provider
+    provider_id = series.metadata_id
+
+    manga_data = await metadata_service.get_manga(provider, provider_id)
     if not manga_data:
-        raise ValueError(f"Manga {series.mangadex_id} not found on MangaDex")
+        raise ValueError(f"Manga {provider_id} not found on {provider}")
 
     # Update metadata fields
     series.title = manga_data["title"]
@@ -193,9 +209,9 @@ async def refresh_series(db: Session, series_id: int) -> Series:
     # Fetch new chapters
     try:
         chapters_data = await metadata_service.get_manga_chapters(
-            series.mangadex_id, lang=settings.DEFAULT_LANGUAGE
+            provider, provider_id, lang=settings.DEFAULT_LANGUAGE
         )
-        _upsert_chapters(db, series.id, chapters_data)
+        _upsert_chapters(db, series.id, provider, chapters_data)
     except Exception:
         pass
 
@@ -206,7 +222,7 @@ async def refresh_series(db: Session, series_id: int) -> Series:
     if manga_data.get("cover_filename"):
         try:
             await metadata_service.download_cover(
-                manga_data["id"], manga_data["cover_filename"]
+                provider, manga_data["id"], manga_data.get("cover_filename") or manga_data.get("cover_url")
             )
         except Exception:
             pass

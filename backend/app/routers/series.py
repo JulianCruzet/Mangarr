@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -18,9 +18,29 @@ from app.schemas.series import (
     VolumeResponse,
 )
 from app.schemas.chapter import ChapterResponse
-from app.services import series_service
+from app.services import series_service, metadata_service
 
 router = APIRouter(prefix="/series", tags=["series"])
+
+
+# ── Search result schema ────────────────────────────────────────────────────
+
+class SearchResult(BaseModel):
+    """Search result from metadata provider."""
+    id: str
+    title: str
+    year: Optional[int] = None
+    description: Optional[str] = None
+    cover_filename: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class SearchResponse(BaseModel):
+    """Response from series search endpoint."""
+    results: List[SearchResult]
+    total: int
+    provider: str
 
 
 # ── File-mapping schemas ────────────────────────────────────────────────────
@@ -56,6 +76,36 @@ class FileRemapRequest(BaseModel):
     parsed_chapter_number: Optional[str] = None
 
 
+@router.get("/search", response_model=SearchResponse)
+async def search_series(
+    q: str = Query(..., description="Search query"),
+    provider: str = Query("mangadex", description="Metadata provider to search"),
+    limit: int = Query(20, description="Maximum number of results"),
+    offset: int = Query(0, description="Result offset for pagination"),
+):
+    """Search for manga from the specified metadata provider."""
+    try:
+        results, total = await metadata_service.search_manga(
+            q, provider=provider, limit=limit, offset=offset
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Search failed: {exc}")
+
+    search_results = [
+        SearchResult(
+            id=r.get("id"),
+            title=r.get("title"),
+            year=r.get("year"),
+            description=r.get("description"),
+            cover_filename=r.get("cover_filename"),
+        )
+        for r in results
+    ]
+    return SearchResponse(results=search_results, total=total, provider=provider)
+
+
 @router.get("", response_model=SeriesListResponse)
 def list_series(
     status: Optional[str] = Query(None, description="Filter by status"),
@@ -82,11 +132,12 @@ async def add_series(
     payload: SeriesCreate,
     db: Session = Depends(get_db),
 ):
-    """Add a manga to the library by MangaDex ID."""
+    """Add a manga to the library from the specified metadata provider."""
     try:
         series = await series_service.add_series(
             db,
-            mangadex_id=payload.mangadex_id,
+            metadata_id=payload.metadata_id,
+            metadata_provider=payload.metadata_provider,
             root_folder_id=payload.root_folder_id,
             monitor_status=payload.monitor_status,
         )

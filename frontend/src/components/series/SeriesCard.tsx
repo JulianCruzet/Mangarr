@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { StatusBadge } from '../ui/Badge';
+import { StatusBadge, Badge } from '../ui/Badge';
 import type { Series } from '../../types';
 
 interface SeriesCardProps {
@@ -79,12 +79,17 @@ export function SeriesCard({ series }: SeriesCardProps) {
         {/* Gradient overlay at bottom */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
 
-        {/* Status badge */}
-        {series.status && (
-          <div className="absolute top-2 left-2">
-            <StatusBadge status={series.status} size="sm" />
+        {/* Status badge and provider badge */}
+        <div className="absolute top-2 left-2 right-2 flex items-start justify-between gap-1">
+          <div>
+            {series.status && (
+              <StatusBadge status={series.status} size="sm" />
+            )}
           </div>
-        )}
+          <Badge variant="info" size="sm">
+            {series.metadata_provider === 'mangadex' ? 'MDex' : series.metadata_provider === 'mangabaka' ? 'Baka' : series.metadata_provider}
+          </Badge>
+        </div>
 
         {/* Title + chapter info overlay */}
         <div className="absolute bottom-0 left-0 right-0 p-2.5">

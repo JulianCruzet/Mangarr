@@ -7,7 +7,9 @@ export interface RootFolder {
 
 export interface Series {
   id: number;
-  mangadex_id: string;
+  metadata_provider: string;
+  metadata_id: string;
+  mangadex_id: string | null;
   title: string;
   alt_titles_json: string | null;
   description: string | null;

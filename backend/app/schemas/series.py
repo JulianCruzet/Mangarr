@@ -26,7 +26,8 @@ class SeriesBase(BaseModel):
 
 
 class SeriesCreate(BaseModel):
-    mangadex_id: str
+    metadata_id: str
+    metadata_provider: str = "mangadex"
     root_folder_id: int
     monitor_status: str = "all"
 
@@ -38,7 +39,9 @@ class SeriesUpdate(BaseModel):
 
 class SeriesResponse(SeriesBase):
     id: int
-    mangadex_id: str
+    metadata_provider: str = "mangadex"
+    metadata_id: str
+    mangadex_id: Optional[str] = None
     alt_titles_json: Optional[str] = None
     tags_json: Optional[str] = None
     cover_filename: Optional[str] = None

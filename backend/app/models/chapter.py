@@ -23,8 +23,9 @@ class Chapter(Base):
     volume_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("volumes.id", ondelete="SET NULL"), nullable=True
     )
+    metadata_provider: Mapped[str] = mapped_column(String(32), default="mangadex", nullable=False)
     mangadex_id: Mapped[Optional[str]] = mapped_column(
-        String(36), unique=True, nullable=True
+        String(36), nullable=True
     )
     chapter_number: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     volume_number: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)

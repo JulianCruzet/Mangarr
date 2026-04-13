@@ -13,20 +13,31 @@ router = APIRouter(prefix="/search", tags=["search"])
 @router.get("/manga", response_model=MangaSearchResponse)
 async def search_manga(
     q: str = Query(..., min_length=1, description="Search query"),
+    provider: str = Query("mangadex", description="Metadata provider"),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ):
-    """Search MangaDex for manga by title."""
+    """Search for manga by title from the specified metadata provider."""
     try:
-        results, total = await metadata_service.search_manga(q, limit=limit, offset=offset)
+        results, total = await metadata_service.search_manga(
+            q, provider=provider, limit=limit, offset=offset
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"MangaDex API error: {exc}")
+        raise HTTPException(status_code=502, detail=f"Metadata provider error: {exc}")
 
     manga_results = []
     for m in results:
         cover_url = None
+        # Build cover URL based on provider
         if m.get("cover_filename") and m.get("id"):
-            cover_url = metadata_service.get_cover_url(m["id"], m["cover_filename"])
+            if provider == "mangadex":
+                from app.providers.mangadex import MangaDexProvider
+                provider_instance = MangaDexProvider()
+                cover_url = provider_instance._get_cover_url(m["id"], m["cover_filename"])
+            elif provider == "mangabaka" and m.get("cover_url"):
+                cover_url = m.get("cover_url")
 
         manga_results.append(
             MangaSearchResult(
@@ -52,22 +63,32 @@ async def search_manga(
     )
 
 
-@router.get("/manga/{mangadex_id}", response_model=MangaSearchResult)
-async def get_manga_detail(mangadex_id: str):
-    """Get full details for a single manga from MangaDex."""
+@router.get("/manga/{manga_id}", response_model=MangaSearchResult)
+async def get_manga_detail(
+    manga_id: str,
+    provider: str = Query("mangadex", description="Metadata provider"),
+):
+    """Get full details for a single manga from the specified metadata provider."""
     try:
-        manga_data = await metadata_service.get_manga(mangadex_id)
+        manga_data = await metadata_service.get_manga(provider, manga_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"MangaDex API error: {exc}")
+        raise HTTPException(status_code=502, detail=f"Metadata provider error: {exc}")
 
     if not manga_data:
-        raise HTTPException(status_code=404, detail=f"Manga {mangadex_id} not found on MangaDex")
+        raise HTTPException(status_code=404, detail=f"Manga {manga_id} not found on {provider}")
 
     cover_url = None
     if manga_data.get("cover_filename") and manga_data.get("id"):
-        cover_url = metadata_service.get_cover_url(
-            manga_data["id"], manga_data["cover_filename"]
-        )
+        if provider == "mangadex":
+            from app.providers.mangadex import MangaDexProvider
+            provider_instance = MangaDexProvider()
+            cover_url = provider_instance._get_cover_url(
+                manga_data["id"], manga_data["cover_filename"]
+            )
+        elif provider == "mangabaka" and manga_data.get("cover_url"):
+            cover_url = manga_data.get("cover_url")
 
     import json
 
@@ -100,16 +121,19 @@ async def get_manga_detail(mangadex_id: str):
     )
 
 
-@router.get("/manga/{mangadex_id}/chapters", response_model=List[ChapterSearchResult])
+@router.get("/manga/{manga_id}/chapters", response_model=List[ChapterSearchResult])
 async def get_manga_chapters(
-    mangadex_id: str,
+    manga_id: str,
+    provider: str = Query("mangadex", description="Metadata provider"),
     lang: str = Query("en", description="Language code"),
 ):
-    """Fetch all chapters for a manga from MangaDex."""
+    """Fetch all chapters for a manga from the specified metadata provider."""
     try:
-        chapters = await metadata_service.get_manga_chapters(mangadex_id, lang=lang)
+        chapters = await metadata_service.get_manga_chapters(provider, manga_id, lang=lang)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"MangaDex API error: {exc}")
+        raise HTTPException(status_code=502, detail=f"Metadata provider error: {exc}")
 
     return [
         ChapterSearchResult(

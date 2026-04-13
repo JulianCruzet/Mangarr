@@ -16,6 +16,7 @@ import {
   ArrowRight,
   AlertTriangle,
   MoveRight,
+  ExternalLink,
 } from 'lucide-react';
 import { seriesApi } from '../api/series';
 import type { OrganizeProposal } from '../api/series';
@@ -253,6 +254,15 @@ function parseFloat2(val: string | null): number {
 
 function sortChapters(chapters: Chapter[]): Chapter[] {
   return [...chapters].sort((a, b) => parseFloat2(a.chapter_number) - parseFloat2(b.chapter_number));
+}
+
+function getProviderUrl(provider: string, metadataId: string): string | null {
+  if (provider === 'mangadex') {
+    return `https://mangadex.org/title/${metadataId}`;
+  } else if (provider === 'mangabaka') {
+    return `https://mangabaka.org/${metadataId}`;
+  }
+  return null;
 }
 
 interface ChapterRowProps {
@@ -581,6 +591,9 @@ export function SeriesDetail() {
               {series.original_language && (
                 <Badge variant="muted">{series.original_language.toUpperCase()}</Badge>
               )}
+              <Badge variant="info" size="sm">
+                {series.metadata_provider === 'mangadex' ? 'MangaDex' : series.metadata_provider === 'mangabaka' ? 'MangaBaka' : series.metadata_provider}
+              </Badge>
             </div>
 
             {/* Description */}
@@ -666,6 +679,24 @@ export function SeriesDetail() {
                     : 'None'}
                 </button>
               )}
+            </div>
+
+            {/* Provider links */}
+            <div className="mb-5">
+              <p className="text-mangarr-muted text-xs uppercase tracking-wide mb-2">Source</p>
+              <div className="flex flex-wrap gap-2">
+                {getProviderUrl(series.metadata_provider, series.metadata_id) && (
+                  <a
+                    href={getProviderUrl(series.metadata_provider, series.metadata_id) || '#'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-mangarr-input border border-mangarr-border rounded-lg hover:bg-mangarr-card transition-colors text-mangarr-accent hover:text-mangarr-accent"
+                  >
+                    {series.metadata_provider === 'mangadex' ? 'View on MangaDex' : 'View on MangaBaka'}
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                )}
+              </div>
             </div>
 
             {/* Action buttons */}

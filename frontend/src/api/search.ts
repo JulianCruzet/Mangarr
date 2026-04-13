@@ -3,6 +3,7 @@ import type { SearchResult } from '../types';
 
 export interface SearchParams {
   q: string;
+  provider?: string;
   limit?: number;
   offset?: number;
 }
@@ -60,6 +61,7 @@ export const searchApi = {
   searchManga: async (params: SearchParams): Promise<SearchResult[]> => {
     const query = new URLSearchParams();
     query.set('q', params.q);
+    query.set('provider', params.provider ?? 'mangadex');
     if (params.limit !== undefined) query.set('limit', String(params.limit));
     if (params.offset !== undefined) query.set('offset', String(params.offset));
     const response = await api.get<MangaSearchResponseApi | SearchResult[]>(
@@ -71,8 +73,8 @@ export const searchApi = {
     return (response.results ?? []).map(mapMangaSearchResult);
   },
 
-  getMangaByMangadexId: async (mangadexId: string): Promise<SearchResult> => {
-    const m = await api.get<MangaSearchResultApi>(`/search/manga/${mangadexId}`);
+  getMangaById: async (mangaId: string, provider: string = 'mangadex'): Promise<SearchResult> => {
+    const m = await api.get<MangaSearchResultApi>(`/search/manga/${mangaId}?provider=${provider}`);
     return mapMangaSearchResult(m);
   },
 };

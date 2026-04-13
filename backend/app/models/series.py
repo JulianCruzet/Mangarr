@@ -22,11 +22,13 @@ class MonitorStatus(str, Enum):
 class Series(Base):
     __tablename__ = "series"
     __table_args__ = (
-        Index("ix_series_mangadex_id", "mangadex_id"),
+        Index("ix_series_provider_metadata", "metadata_provider", "metadata_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    mangadex_id: Mapped[str] = mapped_column(String(36), unique=True, nullable=False)
+    mangadex_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    metadata_provider: Mapped[str] = mapped_column(String(32), default="mangadex", nullable=False)
+    metadata_id: Mapped[str] = mapped_column(String(255), nullable=False)
     title: Mapped[str] = mapped_column(String, nullable=False)
     alt_titles_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

@@ -18,9 +18,24 @@ export interface SeriesListParams {
 }
 
 export interface AddSeriesPayload {
-  mangadex_id: string;
+  metadata_id: string;
+  metadata_provider: 'mangadex' | 'mangabaka';
   root_folder_id: number;
   monitor_status: 'all' | 'future' | 'none';
+}
+
+export interface SearchResult {
+  id: string;
+  title: string;
+  year?: number;
+  description?: string;
+  cover_filename?: string;
+}
+
+export interface SearchResponse {
+  results: SearchResult[];
+  total: number;
+  provider: string;
 }
 
 export interface UpdateSeriesPayload {
@@ -47,6 +62,16 @@ export const seriesApi = {
     const response = await api.get<Series[] | SeriesListResponse>(`/series${qs ? `?${qs}` : ''}`);
     return Array.isArray(response) ? response : response.items;
   },
+
+  search: (
+    query: string,
+    provider: string = 'mangadex',
+    limit: number = 20,
+    offset: number = 0
+  ): Promise<SearchResponse> =>
+    api.get<SearchResponse>('/series/search', {
+      params: { q: query, provider, limit, offset },
+    }),
 
   get: (id: number): Promise<SeriesWithVolumes> =>
     api.get<SeriesWithVolumes>(`/series/${id}`),
