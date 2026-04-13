@@ -1,0 +1,8 @@
+services:
+  mangarr:
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    container_name: mangarr
+    ports:
+      - "8000:8000"

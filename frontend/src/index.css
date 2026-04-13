@@ -1,0 +1,102 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background-color: #0f1117;
+    color: #e4e6f0;
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #0f1117;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #2d3147;
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3d4160;
+  }
+
+  /* Firefox scrollbar */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #2d3147 #0f1117;
+  }
+
+  /* Focus styles */
+  :focus-visible {
+    outline: 2px solid #5c9dff;
+    outline-offset: 2px;
+  }
+
+  /* Remove default outline for mouse users */
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+}
+
+@layer components {
+  .skeleton {
+    @apply bg-mangarr-card animate-pulse rounded;
+  }
+
+  .card {
+    @apply bg-mangarr-card border border-mangarr-border rounded-lg;
+  }
+
+  .input-base {
+    @apply bg-mangarr-input border border-mangarr-border rounded-md px-3 py-2
+           text-mangarr-text placeholder-mangarr-muted
+           focus:outline-none focus:border-mangarr-accent focus:ring-1 focus:ring-mangarr-accent
+           transition-colors duration-150;
+  }
+
+  .select-base {
+    @apply bg-mangarr-input border border-mangarr-border rounded-md px-3 py-2
+           text-mangarr-text
+           focus:outline-none focus:border-mangarr-accent focus:ring-1 focus:ring-mangarr-accent
+           transition-colors duration-150 cursor-pointer;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
