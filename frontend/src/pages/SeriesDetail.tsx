@@ -8,8 +8,14 @@ import {
   Download,
   FileX,
   CheckCircle,
+  HardDrive,
+  Pencil,
+  X,
+  Save,
+  BookOpen,
 } from 'lucide-react';
 import { seriesApi } from '../api/series';
+import { api } from '../api/client';
 import { TopBar } from '../components/layout/TopBar';
 import { PageContainer } from '../components/layout/PageContainer';
 import { Button } from '../components/ui/Button';
@@ -17,6 +23,167 @@ import { StatusBadge, ContentRatingBadge, Badge } from '../components/ui/Badge';
 import { Spinner } from '../components/ui/Spinner';
 import { useNotificationStore } from '../store/notificationStore';
 import type { Chapter } from '../types';
+
+// ── File types ───────────────────────────────────────────────────────────────
+interface LinkedChapter {
+  id: number;
+  chapter_number: string | null;
+  volume_number: string | null;
+  title: string | null;
+}
+
+interface SeriesFile {
+  id: number;
+  file_name: string;
+  file_path: string;
+  file_size: number;
+  extension: string;
+  parsed_volume_number: string | null;
+  parsed_chapter_number: string | null;
+  scan_state: string;
+  chapter_id: number | null;
+  linked_chapter: LinkedChapter | null;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+}
+
+// ── File row with inline edit ─────────────────────────────────────────────────
+function FileRow({
+  file,
+  seriesId,
+  onUpdated,
+}: {
+  file: SeriesFile;
+  seriesId: number;
+  onUpdated: (updated: SeriesFile) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [vol, setVol] = useState(file.parsed_volume_number ?? '');
+  const [ch, setCh] = useState(file.parsed_chapter_number ?? '');
+  const [saving, setSaving] = useState(false);
+  const addToast = useNotificationStore((s) => s.addToast);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const updated = await api.put<SeriesFile>(
+        `/series/${seriesId}/files/${file.id}`,
+        {
+          parsed_volume_number: vol || null,
+          parsed_chapter_number: ch || null,
+        },
+      );
+      onUpdated(updated);
+      setEditing(false);
+      addToast('File mapping updated', 'success');
+    } catch (e) {
+      addToast(`Save failed: ${(e as Error).message}`, 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const linkedLabel = file.linked_chapter
+    ? [
+        file.linked_chapter.volume_number ? `Vol. ${file.linked_chapter.volume_number}` : null,
+        file.linked_chapter.chapter_number ? `Ch. ${file.linked_chapter.chapter_number}` : null,
+        file.linked_chapter.title,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : null;
+
+  return (
+    <tr className="border-b border-mangarr-border hover:bg-mangarr-input/40 transition-colors group">
+      {/* Filename */}
+      <td className="py-2.5 px-4 text-sm max-w-xs">
+        <span className="text-mangarr-text font-mono text-xs truncate block" title={file.file_path}>
+          {file.file_name}
+        </span>
+        <span className="text-mangarr-disabled text-xs">{formatBytes(file.file_size)}</span>
+      </td>
+
+      {/* Vol / Ch detected */}
+      <td className="py-2.5 px-4 text-sm w-40">
+        {editing ? (
+          <div className="flex gap-1.5">
+            <input
+              className="input-base w-16 py-1 text-xs text-center"
+              placeholder="Vol"
+              value={vol}
+              onChange={(e) => setVol(e.target.value)}
+            />
+            <input
+              className="input-base w-16 py-1 text-xs text-center"
+              placeholder="Ch"
+              value={ch}
+              onChange={(e) => setCh(e.target.value)}
+            />
+          </div>
+        ) : (
+          <span className="text-mangarr-muted text-xs font-mono">
+            {file.parsed_volume_number ? `Vol.${file.parsed_volume_number}` : ''}
+            {file.parsed_volume_number && file.parsed_chapter_number ? ' ' : ''}
+            {file.parsed_chapter_number ? `Ch.${file.parsed_chapter_number}` : ''}
+            {!file.parsed_volume_number && !file.parsed_chapter_number ? '—' : ''}
+          </span>
+        )}
+      </td>
+
+      {/* Linked MangaDex chapter */}
+      <td className="py-2.5 px-4 text-sm hidden md:table-cell">
+        {linkedLabel ? (
+          <span className="text-mangarr-success text-xs flex items-center gap-1">
+            <CheckCircle className="w-3 h-3 shrink-0" />
+            {linkedLabel}
+          </span>
+        ) : (
+          <span className="text-mangarr-muted text-xs flex items-center gap-1">
+            <FileX className="w-3 h-3 shrink-0" />
+            Not linked
+          </span>
+        )}
+      </td>
+
+      {/* Actions */}
+      <td className="py-2.5 px-4 w-24 text-right">
+        {editing ? (
+          <div className="flex items-center justify-end gap-1">
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="p-1 rounded hover:bg-mangarr-accent/20 text-mangarr-accent transition-colors"
+              title="Save"
+            >
+              {saving ? <Spinner size="sm" /> : <Save className="w-3.5 h-3.5" />}
+            </button>
+            <button
+              onClick={() => { setEditing(false); setVol(file.parsed_volume_number ?? ''); setCh(file.parsed_chapter_number ?? ''); }}
+              className="p-1 rounded hover:bg-mangarr-danger/20 text-mangarr-muted hover:text-mangarr-danger transition-colors"
+              title="Cancel"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setEditing(true)}
+            className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-mangarr-input text-mangarr-muted hover:text-mangarr-text transition-all"
+            title="Edit mapping"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </td>
+    </tr>
+  );
+}
 
 function CoverImage({
   mangadexId,
@@ -125,6 +292,8 @@ function ChapterRow({ chapter }: ChapterRowProps) {
   );
 }
 
+type Tab = 'chapters' | 'files';
+
 export function SeriesDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -132,6 +301,8 @@ export function SeriesDetail() {
   const addToast = useNotificationStore((s) => s.addToast);
   const [monitorEdit, setMonitorEdit] = useState(false);
   const [monitorVal, setMonitorVal] = useState<'all' | 'future' | 'none'>('all');
+  const [activeTab, setActiveTab] = useState<Tab>('chapters');
+  const [files, setFiles] = useState<SeriesFile[]>([]);
 
   const seriesId = Number(id);
 
@@ -155,6 +326,18 @@ export function SeriesDetail() {
     onSuccess: (res) => addToast(res.message || 'Files organized', 'success'),
     onError: (err) => addToast(`Organize failed: ${(err as Error).message}`, 'error'),
   });
+
+  const { data: seriesFiles, isLoading: filesLoading } = useQuery({
+    queryKey: ['series-files', seriesId],
+    queryFn: () => api.get<SeriesFile[]>(`/series/${seriesId}/files`),
+    enabled: activeTab === 'files' && !isNaN(seriesId),
+  });
+
+  // Keep local copy so inline edits update without refetch
+  const displayFiles = files.length > 0 ? files : (seriesFiles ?? []);
+  if (seriesFiles && files.length === 0 && seriesFiles.length > 0) {
+    // seed local state once
+  }
 
   const { mutate: updateMonitor, isPending: isUpdatingMonitor } = useMutation({
     mutationFn: (val: 'all' | 'future' | 'none') =>
@@ -367,56 +550,115 @@ export function SeriesDetail() {
           </div>
         </div>
 
-        {/* Chapters table */}
+        {/* Tabs */}
         <div className="bg-mangarr-card border border-mangarr-border rounded-xl overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-3 border-b border-mangarr-border">
-            <h2 className="text-mangarr-text font-semibold text-sm">
+          {/* Tab bar */}
+          <div className="flex items-center border-b border-mangarr-border px-2 pt-1">
+            <button
+              onClick={() => setActiveTab('chapters')}
+              className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
+                activeTab === 'chapters'
+                  ? 'border-mangarr-accent text-mangarr-accent'
+                  : 'border-transparent text-mangarr-muted hover:text-mangarr-text'
+              }`}
+            >
+              <BookOpen className="w-4 h-4" />
               Chapters
-            </h2>
-            <div className="flex items-center gap-3">
-              <span className="text-mangarr-muted text-xs">
-                {downloadedCount}/{totalCount} downloaded
+              <span className="ml-1 text-xs bg-mangarr-input px-1.5 py-0.5 rounded-full">
+                {downloadedCount}/{totalCount}
               </span>
-              <Badge variant={downloadedCount === totalCount && totalCount > 0 ? 'success' : 'muted'}>
-                <Download className="w-3 h-3 mr-1" />
-                {progressPct}%
-              </Badge>
+            </button>
+            <button
+              onClick={() => setActiveTab('files')}
+              className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
+                activeTab === 'files'
+                  ? 'border-mangarr-accent text-mangarr-accent'
+                  : 'border-transparent text-mangarr-muted hover:text-mangarr-text'
+              }`}
+            >
+              <HardDrive className="w-4 h-4" />
+              Files
+            </button>
+            <div className="ml-auto flex items-center gap-3 pr-3 pb-1">
+              {activeTab === 'chapters' && (
+                <Badge variant={downloadedCount === totalCount && totalCount > 0 ? 'success' : 'muted'}>
+                  <Download className="w-3 h-3 mr-1" />
+                  {progressPct}%
+                </Badge>
+              )}
             </div>
           </div>
 
-          {sortedChapters.length === 0 ? (
-            <div className="py-12 text-center text-mangarr-muted">
-              <p className="text-sm">No chapters found.</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead>
-                  <tr className="border-b border-mangarr-border bg-mangarr-input/30">
-                    <th className="py-2 px-4 text-mangarr-muted text-xs font-medium uppercase tracking-wider">
-                      #
-                    </th>
-                    <th className="py-2 px-4 text-mangarr-muted text-xs font-medium uppercase tracking-wider">
-                      Title
-                    </th>
-                    <th className="py-2 px-4 text-mangarr-muted text-xs font-medium uppercase tracking-wider hidden md:table-cell">
-                      Volume
-                    </th>
-                    <th className="py-2 px-4 text-mangarr-muted text-xs font-medium uppercase tracking-wider hidden lg:table-cell">
-                      Published
-                    </th>
-                    <th className="py-2 px-4 text-mangarr-muted text-xs font-medium uppercase tracking-wider text-right">
-                      Status
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedChapters.map((chapter, i) => (
-                    <ChapterRow key={chapter.id} chapter={chapter} index={i} />
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          {/* ── Chapters tab ── */}
+          {activeTab === 'chapters' && (
+            sortedChapters.length === 0 ? (
+              <div className="py-12 text-center text-mangarr-muted">
+                <p className="text-sm">No chapters found.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="border-b border-mangarr-border bg-mangarr-input/30">
+                      <th className="py-2 px-4 text-mangarr-muted text-xs font-medium uppercase tracking-wider">#</th>
+                      <th className="py-2 px-4 text-mangarr-muted text-xs font-medium uppercase tracking-wider">Title</th>
+                      <th className="py-2 px-4 text-mangarr-muted text-xs font-medium uppercase tracking-wider hidden md:table-cell">Volume</th>
+                      <th className="py-2 px-4 text-mangarr-muted text-xs font-medium uppercase tracking-wider hidden lg:table-cell">Published</th>
+                      <th className="py-2 px-4 text-mangarr-muted text-xs font-medium uppercase tracking-wider text-right">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedChapters.map((chapter, i) => (
+                      <ChapterRow key={chapter.id} chapter={chapter} index={i} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+          )}
+
+          {/* ── Files tab ── */}
+          {activeTab === 'files' && (
+            filesLoading ? (
+              <div className="py-12 flex justify-center">
+                <Spinner size="md" />
+              </div>
+            ) : (seriesFiles ?? []).length === 0 ? (
+              <div className="py-12 text-center text-mangarr-muted">
+                <HardDrive className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                <p className="text-sm">No files matched to this series yet.</p>
+                <p className="text-xs mt-1">Run a scan to detect files on disk.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="border-b border-mangarr-border bg-mangarr-input/30">
+                      <th className="py-2 px-4 text-mangarr-muted text-xs font-medium uppercase tracking-wider">Filename</th>
+                      <th className="py-2 px-4 text-mangarr-muted text-xs font-medium uppercase tracking-wider w-44">Detected Vol / Ch</th>
+                      <th className="py-2 px-4 text-mangarr-muted text-xs font-medium uppercase tracking-wider hidden md:table-cell">Linked Chapter</th>
+                      <th className="py-2 px-4 w-20" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(seriesFiles ?? []).map((f) => (
+                      <FileRow
+                        key={f.id}
+                        file={f}
+                        seriesId={seriesId}
+                        onUpdated={(updated) => {
+                          queryClient.setQueryData(
+                            ['series-files', seriesId],
+                            (old: SeriesFile[] | undefined) =>
+                              old ? old.map((x) => (x.id === updated.id ? updated : x)) : [updated],
+                          );
+                        }}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
           )}
         </div>
       </PageContainer>

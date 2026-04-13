@@ -1,12 +1,14 @@
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.series import Series
 from app.models.chapter import Chapter
 from app.models.volume import Volume
+from app.models.imported_file import ImportedFile
 from app.schemas.series import (
     SeriesCreate,
     SeriesUpdate,
@@ -19,6 +21,39 @@ from app.schemas.chapter import ChapterResponse
 from app.services import series_service
 
 router = APIRouter(prefix="/series", tags=["series"])
+
+
+# ── File-mapping schemas ────────────────────────────────────────────────────
+
+class LinkedChapter(BaseModel):
+    id: int
+    chapter_number: Optional[str] = None
+    volume_number: Optional[str] = None
+    title: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class SeriesFileResponse(BaseModel):
+    id: int
+    file_name: str
+    file_path: str
+    file_size: int
+    extension: str
+    parsed_series_title: Optional[str] = None
+    parsed_volume_number: Optional[str] = None
+    parsed_chapter_number: Optional[str] = None
+    scan_state: str
+    chapter_id: Optional[int] = None
+    linked_chapter: Optional[LinkedChapter] = None
+
+    model_config = {"from_attributes": True}
+
+
+class FileRemapRequest(BaseModel):
+    """Update the volume/chapter mapping for a single file and re-link."""
+    parsed_volume_number: Optional[str] = None
+    parsed_chapter_number: Optional[str] = None
 
 
 @router.get("", response_model=SeriesListResponse)
@@ -165,3 +200,119 @@ async def refresh_series(series_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Refresh failed: {exc}")
 
     return SeriesResponse.model_validate(series)
+
+
+@router.get("/{series_id}/files", response_model=List[SeriesFileResponse])
+def list_series_files(series_id: int, db: Session = Depends(get_db)):
+    """List all physical files matched to this series, with their chapter mapping."""
+    series = db.query(Series).filter(Series.id == series_id).first()
+    if not series:
+        raise HTTPException(status_code=404, detail="Series not found")
+
+    files = (
+        db.query(ImportedFile)
+        .filter(ImportedFile.series_id == series_id)
+        .order_by(ImportedFile.parsed_volume_number, ImportedFile.parsed_chapter_number, ImportedFile.file_name)
+        .all()
+    )
+
+    result = []
+    for f in files:
+        linked = None
+        if f.chapter_id:
+            ch = db.query(Chapter).filter(Chapter.id == f.chapter_id).first()
+            if ch:
+                linked = LinkedChapter(
+                    id=ch.id,
+                    chapter_number=ch.chapter_number,
+                    volume_number=ch.volume_number,
+                    title=ch.title,
+                )
+        result.append(
+            SeriesFileResponse(
+                id=f.id,
+                file_name=f.file_name,
+                file_path=f.file_path,
+                file_size=f.file_size,
+                extension=f.extension,
+                parsed_series_title=f.parsed_series_title,
+                parsed_volume_number=f.parsed_volume_number,
+                parsed_chapter_number=f.parsed_chapter_number,
+                scan_state=f.scan_state,
+                chapter_id=f.chapter_id,
+                linked_chapter=linked,
+            )
+        )
+    return result
+
+
+@router.put("/{series_id}/files/{file_id}", response_model=SeriesFileResponse)
+def remap_series_file(
+    series_id: int,
+    file_id: int,
+    payload: FileRemapRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Update the volume/chapter numbers for a file and re-run chapter linking.
+    Use this to correct a wrong auto-detection.
+    """
+    series = db.query(Series).filter(Series.id == series_id).first()
+    if not series:
+        raise HTTPException(status_code=404, detail="Series not found")
+
+    f = db.query(ImportedFile).filter(
+        ImportedFile.id == file_id,
+        ImportedFile.series_id == series_id,
+    ).first()
+    if not f:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # Clear old chapter link
+    if f.chapter_id:
+        old_ch = db.query(Chapter).filter(Chapter.id == f.chapter_id).first()
+        if old_ch:
+            old_ch.is_downloaded = False
+            old_ch.imported_file_id = None
+        f.chapter_id = None
+
+    # Apply new mapping values
+    f.parsed_volume_number = payload.parsed_volume_number
+    f.parsed_chapter_number = payload.parsed_chapter_number
+    f.scan_state = "matched"
+    db.flush()
+
+    # Re-run chapter linking with the new values
+    from app.services.scanner_service import _try_link_chapters
+    _try_link_chapters(db, f, series, {
+        "volume": payload.parsed_volume_number,
+        "chapter": payload.parsed_chapter_number,
+    })
+
+    db.commit()
+    db.refresh(f)
+
+    linked = None
+    if f.chapter_id:
+        ch = db.query(Chapter).filter(Chapter.id == f.chapter_id).first()
+        if ch:
+            linked = LinkedChapter(
+                id=ch.id,
+                chapter_number=ch.chapter_number,
+                volume_number=ch.volume_number,
+                title=ch.title,
+            )
+
+    return SeriesFileResponse(
+        id=f.id,
+        file_name=f.file_name,
+        file_path=f.file_path,
+        file_size=f.file_size,
+        extension=f.extension,
+        parsed_series_title=f.parsed_series_title,
+        parsed_volume_number=f.parsed_volume_number,
+        parsed_chapter_number=f.parsed_chapter_number,
+        scan_state=f.scan_state,
+        chapter_id=f.chapter_id,
+        linked_chapter=linked,
+    )
