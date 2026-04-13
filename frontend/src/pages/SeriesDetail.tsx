@@ -569,7 +569,7 @@ export function SeriesDetail() {
             style={{ aspectRatio: '2/3' }}
           >
             <CoverImage
-              mangadexId={series.mangadex_id}
+              mangadexId={series.mangadex_id || series.metadata_id}
               coverFilename={series.cover_filename}
               title={series.title}
             />

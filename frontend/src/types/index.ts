@@ -64,6 +64,7 @@ export interface SearchResult {
   cover_url: string | null;
   cover_filename: string | null;
   tags: string[];
+  metadata_provider?: string;
 }
 
 export interface ScanStatus {

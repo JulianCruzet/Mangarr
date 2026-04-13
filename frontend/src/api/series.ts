@@ -68,10 +68,15 @@ export const seriesApi = {
     provider: string = 'mangadex',
     limit: number = 20,
     offset: number = 0
-  ): Promise<SearchResponse> =>
-    api.get<SearchResponse>('/series/search', {
-      params: { q: query, provider, limit, offset },
-    }),
+  ): Promise<SearchResponse> => {
+    const params = new URLSearchParams({
+      q: query,
+      provider,
+      limit: String(limit),
+      offset: String(offset),
+    });
+    return api.get<SearchResponse>(`/series/search?${params.toString()}`);
+  },
 
   get: (id: number): Promise<SeriesWithVolumes> =>
     api.get<SeriesWithVolumes>(`/series/${id}`),

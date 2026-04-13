@@ -331,7 +331,11 @@ export function AddSeries() {
     queryFn: () => libraryApi.getFolders(),
   });
 
-  const existingIds = new Set(existingSeries.map((s) => s.metadata_id || s.mangadex_id));
+  const existingIds = new Set(
+    existingSeries
+      .map((s) => s.metadata_id || s.mangadex_id)
+      .filter((id): id is string => id !== null),
+  );
 
   const showResults = debouncedQuery.trim().length >= 2;
 
