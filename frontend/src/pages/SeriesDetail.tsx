@@ -302,7 +302,6 @@ export function SeriesDetail() {
   const [monitorEdit, setMonitorEdit] = useState(false);
   const [monitorVal, setMonitorVal] = useState<'all' | 'future' | 'none'>('all');
   const [activeTab, setActiveTab] = useState<Tab>('chapters');
-  const [files, setFiles] = useState<SeriesFile[]>([]);
 
   const seriesId = Number(id);
 
@@ -333,11 +332,6 @@ export function SeriesDetail() {
     enabled: activeTab === 'files' && !isNaN(seriesId),
   });
 
-  // Keep local copy so inline edits update without refetch
-  const displayFiles = files.length > 0 ? files : (seriesFiles ?? []);
-  if (seriesFiles && files.length === 0 && seriesFiles.length > 0) {
-    // seed local state once
-  }
 
   const { mutate: updateMonitor, isPending: isUpdatingMonitor } = useMutation({
     mutationFn: (val: 'all' | 'future' | 'none') =>
