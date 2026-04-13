@@ -24,19 +24,50 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Filename parsing patterns (in priority order)
 # ---------------------------------------------------------------------------
+
+# Strips parenthesized/bracketed noise groups: (2022), [Digital], (1r0n), etc.
+_NOISE_RE = re.compile(r'\s*[\(\[][^\)\]]*[\)\]]')
+
+def _strip_noise(s: str) -> str:
+    return _NOISE_RE.sub('', s).strip()
+
 _PATTERNS = [
+    # ── Dash-separated ────────────────────────────────────────────────────────
+    # "Series - Vol.01 Ch.001"
     re.compile(
-        r"(?P<series>.+?)\s*[-–]\s*[Vv]ol\.?\s*(?P<vol>[\d.]+)\s*[Cc]h\.?\s*(?P<ch>[\d.]+)"
+        r"(?P<series>.+?)\s*[-–]\s*[Vv]ol\.?\s*(?P<vol>[\d.]+)\s*[Cc]h\.?\s*(?P<ch>[\d.]+)",
+        re.IGNORECASE,
     ),
+    # "Series - Ch.001"
     re.compile(
-        r"(?P<series>.+?)\s*[-–]\s*[Cc]h(?:apter)?\.?\s*(?P<ch>[\d.]+)"
+        r"(?P<series>.+?)\s*[-–]\s*[Cc]h(?:apter)?\.?\s*(?P<ch>[\d.]+)",
+        re.IGNORECASE,
     ),
+    # "Series - Vol.01"
     re.compile(
-        r"(?P<series>.+?)\s*[-–]\s*[Vv]ol(?:ume)?\.?\s*(?P<vol>[\d.]+)"
+        r"(?P<series>.+?)\s*[-–]\s*[Vv]ol(?:ume)?\.?\s*(?P<vol>[\d.]+)",
+        re.IGNORECASE,
     ),
+
+    # ── No-dash: digital/scene release format ─────────────────────────────────
+    # "Series v01c001" or "Series v01 c001" (vol + chapter, no dash)
     re.compile(
-        r"(?P<series>.+?)\s+(?P<ch>[\d.]+)$"
+        r"(?P<series>.+?)\s+[Vv](?:ol(?:ume)?\.?)?\s*(?P<vol>\d+(?:\.\d+)?)\s*[Cc](?:h(?:apter)?\.?)?\s*(?P<ch>\d+(?:\.\d+)?)",
+        re.IGNORECASE,
     ),
+    # "Series v01 (Year) (Quality) (Group)" — most common digital format
+    re.compile(
+        r"(?P<series>.+?)\s+[Vv](?:ol(?:ume)?\.?)?\s*(?P<vol>\d+(?:\.\d+)?)(?=\s|$|[\(\[])",
+        re.IGNORECASE,
+    ),
+    # "Series c001 (noise)" or "Series ch001"
+    re.compile(
+        r"(?P<series>.+?)\s+[Cc](?:h(?:apter)?\.?)?\s*(?P<ch>\d+(?:\.\d+)?)(?=\s|$|[\(\[])",
+        re.IGNORECASE,
+    ),
+
+    # ── Fallback: bare number at end ──────────────────────────────────────────
+    re.compile(r"(?P<series>.+?)\s+(?P<ch>[\d.]+)$"),
 ]
 
 FUZZY_THRESHOLD = 80
@@ -71,17 +102,25 @@ def get_scan_job() -> ScanJob:
 # ---------------------------------------------------------------------------
 def parse_filename(stem: str) -> dict:
     """
-    Try each pattern in priority order.
+    Try each pattern in priority order against both the raw stem and a
+    noise-stripped version (removes groups like (2022), [Digital], (1r0n)).
     Returns dict with keys: series, chapter, volume (all may be None).
     """
+    cleaned = _strip_noise(stem)
+
     for pattern in _PATTERNS:
-        m = pattern.search(stem)
+        # Try raw first, then noise-stripped
+        m = pattern.search(stem) or (pattern.search(cleaned) if cleaned != stem else None)
         if m:
             groups = m.groupdict()
+            series = (groups.get("series") or "").strip() or None
+            # Strip any trailing noise that crept into the series capture group
+            if series:
+                series = _strip_noise(series).strip() or series
             return {
-                "series": groups.get("series", "").strip() or None,
-                "chapter": groups.get("ch", None),
-                "volume": groups.get("vol", None),
+                "series": series,
+                "chapter": groups.get("ch") or None,
+                "volume": groups.get("vol") or None,
             }
     return {"series": None, "chapter": None, "volume": None}
 
