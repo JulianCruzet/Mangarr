@@ -209,6 +209,22 @@ def fuzzy_match_series(
     return best_series if best_score >= FUZZY_THRESHOLD else None
 
 
+def _normalize_num(s: Optional[str]) -> Optional[str]:
+    """
+    Normalise a volume/chapter number string for comparison.
+    Strips leading zeros so "01" == "1", "001.5" == "1.5", etc.
+    MangaDex stores bare integers ("1", "12") while filenames often
+    zero-pad ("v01", "c001").
+    """
+    if not s:
+        return None
+    try:
+        f = float(s)
+        return str(int(f)) if f == int(f) else str(f)
+    except (ValueError, TypeError):
+        return s.strip()
+
+
 def _try_link_chapters(
     db: Session,
     imported: "ImportedFile",
@@ -216,23 +232,35 @@ def _try_link_chapters(
     parsed: dict,
 ) -> None:
     """
-    After matching a file to a series, try to set Chapter.is_downloaded.
+    After matching a file to a series, set Chapter.is_downloaded.
 
-    - Volume + chapter number  → link exact chapter
-    - Chapter number only      → link exact chapter
-    - Volume number only       → mark ALL chapters in that volume downloaded
-      (a volume CBZ contains every chapter in the volume)
+    - Chapter number (± volume)  → link that exact chapter
+    - Volume number only         → mark ALL chapters in that volume downloaded
+                                   (a volume CBZ contains every chapter)
+
+    Both raw and leading-zero-normalised values are tried so that
+    filename "v01" matches MangaDex "1", "ch097" matches "97", etc.
     """
     from app.models.chapter import Chapter
     from app.models.volume import Volume
 
-    ch_num = parsed.get("chapter")
+    ch_num  = parsed.get("chapter")
     vol_num = parsed.get("volume")
+
+    norm_ch  = _normalize_num(ch_num)
+    norm_vol = _normalize_num(vol_num)
+
+    # Build de-duped lookup sets (raw + normalised)
+    ch_candidates  = {v for v in [ch_num,  norm_ch]  if v}
+    vol_candidates = {v for v in [vol_num, norm_vol] if v}
 
     if ch_num:
         chapter = (
             db.query(Chapter)
-            .filter(Chapter.series_id == series.id, Chapter.chapter_number == ch_num)
+            .filter(
+                Chapter.series_id == series.id,
+                Chapter.chapter_number.in_(ch_candidates),
+            )
             .first()
         )
         if chapter:
@@ -241,19 +269,25 @@ def _try_link_chapters(
             chapter.imported_file_id = imported.id
 
     elif vol_num:
-        # Try matching via Volume record first
+        # Try Volume table first (has volume_id FK)
         volume = (
             db.query(Volume)
-            .filter(Volume.series_id == series.id, Volume.volume_number == vol_num)
+            .filter(
+                Volume.series_id == series.id,
+                Volume.volume_number.in_(vol_candidates),
+            )
             .first()
         )
         if volume:
             chapters = db.query(Chapter).filter(Chapter.volume_id == volume.id).all()
         else:
-            # Fallback: match on chapter.volume_number string
+            # Fallback: chapters carry a volume_number string directly
             chapters = (
                 db.query(Chapter)
-                .filter(Chapter.series_id == series.id, Chapter.volume_number == vol_num)
+                .filter(
+                    Chapter.series_id == series.id,
+                    Chapter.volume_number.in_(vol_candidates),
+                )
                 .all()
             )
         for ch in chapters:
