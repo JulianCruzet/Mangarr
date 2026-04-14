@@ -12,7 +12,7 @@ from app.utils.naming import (
     select_file_template,
     build_series_folder_name,
 )
-from app.utils.file_helpers import safe_move
+from app.utils.file_helpers import prune_empty_dirs_above_root, safe_move
 from app.config import get_settings
 
 
@@ -163,7 +163,8 @@ def preview_organize(
 ) -> List[Dict[str, Any]]:
     """
     Dry-run: compute proposed renames for all matched/organized files.
-    Returns a list of dicts: {source, destination, would_conflict, series_id, file_id}.
+    Returns a list of dicts including source, destination, would_conflict, series_id,
+    file_id, and library_root (for post-move empty-dir cleanup).
     """
     query = db.query(ImportedFile).filter(
         ImportedFile.scan_state.in_(["matched", "organized"])
@@ -210,6 +211,7 @@ def preview_organize(
                 "source": imported.file_path,
                 "destination": target_path,
                 "would_conflict": False,
+                "library_root": series.root_folder.path,
             }
         )
 
@@ -257,6 +259,7 @@ def organize_series(
 
         try:
             safe_move(src, dst)
+            prune_empty_dirs_above_root(src, proposal["library_root"])
 
             # Update DB record
             imported = (
@@ -308,6 +311,7 @@ def organize_all(db: Session, dry_run: bool = False) -> List[Dict[str, Any]]:
 
         try:
             safe_move(src, dst)
+            prune_empty_dirs_above_root(src, proposal["library_root"])
 
             imported = (
                 db.query(ImportedFile).filter(ImportedFile.id == proposal["file_id"]).first()

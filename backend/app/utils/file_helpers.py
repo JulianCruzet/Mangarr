@@ -20,6 +20,49 @@ def get_file_size(path: Path) -> int:
         return 0
 
 
+def prune_empty_dirs_above_root(file_was_at: str, library_root: str) -> None:
+    """
+    Remove empty parent directories of ``file_was_at`` (the pre-move path),
+    walking upward until ``library_root`` is reached.
+
+    The library root itself is never removed. Best-effort: ignores errors.
+    """
+    try:
+        root = os.path.abspath(library_root)
+        root_key = os.path.normcase(root)
+    except (OSError, TypeError):
+        return
+
+    try:
+        d = os.path.abspath(os.path.dirname(file_was_at))
+    except (OSError, TypeError):
+        return
+
+    while True:
+        try:
+            d_key = os.path.normcase(d)
+        except (OSError, TypeError):
+            return
+
+        if d_key == root_key:
+            break
+        sep = os.sep
+        if not (d_key.startswith(root_key + sep) or d_key.startswith(root_key + "/")):
+            break
+        if not os.path.isdir(d):
+            break
+        try:
+            if os.listdir(d):
+                break
+            os.rmdir(d)
+        except OSError:
+            break
+        parent = os.path.dirname(d)
+        if parent == d:
+            break
+        d = parent
+
+
 def safe_move(src: str, dst: str) -> None:
     """
     Move a file from src to dst.

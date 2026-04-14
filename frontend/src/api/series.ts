@@ -7,6 +7,7 @@ export interface OrganizeProposal {
   source: string;
   destination: string;
   would_conflict: boolean;
+  library_root?: string | null;
   moved?: boolean;
   error?: string | null;
   note?: string | null;

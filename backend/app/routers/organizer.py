@@ -20,6 +20,7 @@ class OrganizeProposal(BaseModel):
     source: str
     destination: str
     would_conflict: bool
+    library_root: Optional[str] = None
     moved: Optional[bool] = None
     error: Optional[str] = None
     note: Optional[str] = None
