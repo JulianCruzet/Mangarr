@@ -367,3 +367,46 @@ def remap_series_file(
         chapter_id=f.chapter_id,
         linked_chapter=linked,
     )
+
+
+@router.delete("/{series_id}/files/{file_id}", status_code=204)
+def delete_series_file(
+    series_id: int,
+    file_id: int,
+    delete_from_disk: bool = Query(default=False, description="Also delete the physical file"),
+    db: Session = Depends(get_db),
+):
+    """
+    Remove a tracked file from the library.
+    Unlinks any matched chapter and optionally deletes the file from disk.
+    """
+    import os
+
+    series = db.query(Series).filter(Series.id == series_id).first()
+    if not series:
+        raise HTTPException(status_code=404, detail="Series not found")
+
+    f = db.query(ImportedFile).filter(
+        ImportedFile.id == file_id,
+        ImportedFile.series_id == series_id,
+    ).first()
+    if not f:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    file_path = f.file_path
+
+    # Unlink chapter
+    if f.chapter_id:
+        ch = db.query(Chapter).filter(Chapter.id == f.chapter_id).first()
+        if ch:
+            ch.is_downloaded = False
+            ch.imported_file_id = None
+
+    db.delete(f)
+    db.commit()
+
+    if delete_from_disk:
+        try:
+            os.remove(file_path)
+        except OSError:
+            pass  # File already gone — not an error

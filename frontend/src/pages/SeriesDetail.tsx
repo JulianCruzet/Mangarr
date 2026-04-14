@@ -19,6 +19,7 @@ import {
   ExternalLink,
   Copy,
   Check,
+  Trash2,
 } from 'lucide-react';
 import { seriesApi } from '../api/series';
 import type { OrganizeProposal } from '../api/series';
@@ -65,16 +66,20 @@ function FileRow({
   file,
   seriesId,
   onUpdated,
+  onDeleted,
 }: {
   file: SeriesFile;
   seriesId: number;
   onUpdated: (updated: SeriesFile) => void;
+  onDeleted: (fileId: number) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [vol, setVol] = useState(file.parsed_volume_number ?? '');
   const [ch, setCh] = useState(file.parsed_chapter_number ?? '');
   const [saving, setSaving] = useState(false);
   const [pathCopied, setPathCopied] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const addToast = useNotificationStore((s) => s.addToast);
 
   async function handleCopyPath() {
@@ -105,6 +110,25 @@ function FileRow({
       addToast(`Save failed: ${(e as Error).message}`, 'error');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDelete(deleteFromDisk: boolean) {
+    setDeleting(true);
+    try {
+      await api.delete<void>(
+        `/series/${seriesId}/files/${file.id}?delete_from_disk=${deleteFromDisk}`,
+      );
+      addToast(
+        deleteFromDisk ? 'File deleted from disk' : 'File removed from library',
+        'success',
+      );
+      onDeleted(file.id);
+    } catch (e) {
+      addToast(`Delete failed: ${(e as Error).message}`, 'error');
+    } finally {
+      setDeleting(false);
+      setConfirmDelete(false);
     }
   }
 
@@ -196,6 +220,38 @@ function FileRow({
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
+        ) : confirmDelete ? (
+          <div className="flex flex-col items-end gap-1">
+            <p className="text-[10px] text-mangarr-muted text-right">Delete file?</p>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => void handleDelete(false)}
+                className="px-1.5 py-0.5 rounded text-[10px] bg-mangarr-input hover:bg-mangarr-border text-mangarr-text transition-colors"
+                title="Remove from library only"
+              >
+                Library only
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => void handleDelete(true)}
+                className="px-1.5 py-0.5 rounded text-[10px] bg-red-900/60 hover:bg-red-800/80 text-red-300 transition-colors"
+                title="Delete file from disk"
+              >
+                {deleting ? <Spinner size="sm" /> : 'From disk'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(false)}
+                className="p-1 rounded hover:bg-mangarr-input text-mangarr-muted transition-colors"
+                title="Cancel"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
         ) : (
           <div className="flex items-center justify-end gap-0.5">
             <button
@@ -217,6 +273,14 @@ function FileRow({
               title="Edit mapping"
             >
               <Pencil className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              className="p-1 rounded opacity-100 md:opacity-0 md:group-hover:opacity-100 hover:bg-red-900/40 text-mangarr-muted hover:text-red-400 transition-all"
+              title="Delete file"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
             </button>
           </div>
         )}
@@ -862,6 +926,15 @@ export function SeriesDetail() {
                             (old: SeriesFile[] | undefined) =>
                               old ? old.map((x) => (x.id === updated.id ? updated : x)) : [updated],
                           );
+                        }}
+                        onDeleted={(fileId) => {
+                          queryClient.setQueryData(
+                            ['series-files', seriesId],
+                            (old: SeriesFile[] | undefined) =>
+                              old ? old.filter((x) => x.id !== fileId) : [],
+                          );
+                          // Invalidate series stats so downloaded count refreshes
+                          void queryClient.invalidateQueries({ queryKey: ['series', seriesId] });
                         }}
                       />
                     ))}

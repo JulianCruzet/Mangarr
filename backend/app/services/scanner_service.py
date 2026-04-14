@@ -397,6 +397,41 @@ def _scan_root_folder(db: Session, root_folder: RootFolder, job: ScanJob) -> Non
     db.commit()
 
 
+def _cleanup_missing_files(db: Session, scan_start: datetime, root_folder_id: Optional[int] = None) -> int:
+    """
+    Remove ImportedFile records for files that were not seen during the current scan
+    (i.e. last_seen_at is older than scan_start), meaning they no longer exist on disk.
+    Unlinks matched chapters before deleting.
+    Returns the number of records removed.
+    """
+    from app.models.chapter import Chapter
+
+    query = db.query(ImportedFile).filter(ImportedFile.last_seen_at < scan_start)
+
+    if root_folder_id is not None:
+        # Only clean files that belong to the scanned folder
+        folder = db.query(RootFolder).filter(RootFolder.id == root_folder_id).first()
+        if folder:
+            # SQLite has no native startswith index, but this is correct
+            query = query.filter(ImportedFile.file_path.like(folder.path.rstrip("/\\") + "%"))
+
+    missing = query.all()
+    count = 0
+    for f in missing:
+        # Unlink the chapter that was satisfied by this file
+        if f.chapter_id:
+            ch = db.query(Chapter).filter(Chapter.id == f.chapter_id).first()
+            if ch:
+                ch.is_downloaded = False
+                ch.imported_file_id = None
+        db.delete(f)
+        count += 1
+
+    if count:
+        db.commit()
+    return count
+
+
 def _run_full_scan(root_folder_id: Optional[int] = None) -> None:
     """
     Synchronous scan function that runs in an executor thread.
@@ -404,7 +439,8 @@ def _run_full_scan(root_folder_id: Optional[int] = None) -> None:
     global _current_job
 
     _current_job.status = "running"
-    _current_job.started_at = datetime.now(timezone.utc)
+    scan_start = datetime.now(timezone.utc)
+    _current_job.started_at = scan_start
     _current_job.total_files = 0
     _current_job.processed_files = 0
     _current_job.matched = 0
@@ -422,6 +458,9 @@ def _run_full_scan(root_folder_id: Optional[int] = None) -> None:
             _scan_root_folder(db, folder, _current_job)
             if _current_job.cancel_requested:
                 break
+
+        if not _current_job.cancel_requested:
+            _cleanup_missing_files(db, scan_start, root_folder_id)
 
         if _current_job.cancel_requested:
             _current_job.status = "cancelled"
