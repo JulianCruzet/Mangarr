@@ -34,5 +34,17 @@ desktop.ini
 # Docker
 .docker/
 
+# Scripts
+scripts/
+
+# Dev history
+history.md
+
+# Windows artifacts
+nul
+
+# Manga library
+manga/
+
 # Covers cache
 covers/
