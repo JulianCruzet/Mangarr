@@ -48,6 +48,11 @@ class Series(Base):
     # Monitoring
     monitor_status: Mapped[str] = mapped_column(String(16), default="all", nullable=False)
 
+    # AniList supplementary data
+    anilist_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    anilist_volumes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    anilist_chapters: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
     # Timestamps
     metadata_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

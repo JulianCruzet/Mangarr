@@ -75,6 +75,22 @@ def upgrade() -> None:
                 nullable=False,
             )
 
+    # Add AniList columns to existing databases
+    inspector = inspect(conn)
+    series_cols_current = _column_names(inspector, "series")
+    if (
+        "anilist_id" not in series_cols_current
+        or "anilist_volumes" not in series_cols_current
+        or "anilist_chapters" not in series_cols_current
+    ):
+        with op.batch_alter_table("series") as batch_op:
+            if "anilist_id" not in series_cols_current:
+                batch_op.add_column(sa.Column("anilist_id", sa.Integer(), nullable=True))
+            if "anilist_volumes" not in series_cols_current:
+                batch_op.add_column(sa.Column("anilist_volumes", sa.Integer(), nullable=True))
+            if "anilist_chapters" not in series_cols_current:
+                batch_op.add_column(sa.Column("anilist_chapters", sa.Integer(), nullable=True))
+
     inspector = inspect(conn)
     if "ix_series_provider_metadata" not in _index_names(inspector, "series"):
         op.create_index(

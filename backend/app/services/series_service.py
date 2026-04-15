@@ -157,6 +157,18 @@ async def add_series(
     db.commit()
     db.refresh(series)
 
+    # AniList supplementary lookup — best-effort, never blocks add_series
+    try:
+        from app.providers.anilist import search_anilist
+        anilist_data = await search_anilist(series.title)
+        if anilist_data:
+            series.anilist_id = anilist_data.get("id")
+            series.anilist_volumes = anilist_data.get("volumes")
+            series.anilist_chapters = anilist_data.get("chapters")
+            db.commit()
+    except Exception:
+        pass  # AniList failure must never break add_series
+
     # Download cover in background (non-blocking)
     if manga_data.get("cover_filename"):
         try:
@@ -217,6 +229,18 @@ async def refresh_series(db: Session, series_id: int) -> Series:
 
     db.commit()
     db.refresh(series)
+
+    # AniList supplementary refresh — best-effort
+    try:
+        from app.providers.anilist import search_anilist
+        anilist_data = await search_anilist(series.title)
+        if anilist_data:
+            series.anilist_id = anilist_data.get("id")
+            series.anilist_volumes = anilist_data.get("volumes")
+            series.anilist_chapters = anilist_data.get("chapters")
+            db.commit()
+    except Exception:
+        pass
 
     # Refresh cover
     if manga_data.get("cover_filename"):

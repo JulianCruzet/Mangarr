@@ -569,6 +569,15 @@ export function SeriesDetail() {
     onError: (err) => addToast(`Refresh failed: ${(err as Error).message}`, 'error'),
   });
 
+  const { mutate: refreshAnilist, isPending: isRefreshingAnilist } = useMutation({
+    mutationFn: () => api.post<{ anilist_id: number | null; anilist_volumes: number | null; anilist_chapters: number | null }>(`/series/${seriesId}/refresh-anilist`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['series', seriesId] });
+      addToast('AniList data updated', 'success');
+    },
+    onError: () => addToast('No AniList match found', 'error'),
+  });
+
   const { mutate: loadPreview, isPending: isLoadingPreview } = useMutation({
     mutationFn: () => seriesApi.previewOrganize(seriesId),
     onSuccess: (proposals) => setOrganizeModal({ proposals, results: null }),
@@ -606,6 +615,13 @@ export function SeriesDetail() {
     },
     onError: (err) => addToast(`Update failed: ${(err as Error).message}`, 'error'),
   });
+
+  // Count distinct owned volumes (used for AniList volume progress bar)
+  const allChaptersForVolume = series?.chapters ?? series?.volumes?.flatMap((v) => v.chapters) ?? [];
+  const ownedVolumeCount = useMemo(() => {
+    const downloaded = allChaptersForVolume.filter((c) => c.is_downloaded && c.volume_number != null);
+    return new Set(downloaded.map((c) => c.volume_number)).size;
+  }, [allChaptersForVolume]);
 
   if (isLoading) {
     return (
@@ -652,6 +668,15 @@ export function SeriesDetail() {
   }
 
   const progressPct = totalCount > 0 ? Math.round((downloadedCount / totalCount) * 100) : 0;
+
+  // AniList-aware progress
+  const anilistChapterTotal = series?.anilist_chapters ?? null;
+  const anilistVolumeTotal = series?.anilist_volumes ?? null;
+  const chapterDenominator = anilistChapterTotal ?? totalCount;
+  const chapterProgressPct = chapterDenominator > 0 ? Math.round((downloadedCount / chapterDenominator) * 100) : 0;
+  const volumeProgressPct = anilistVolumeTotal && anilistVolumeTotal > 0
+    ? Math.round((ownedVolumeCount / anilistVolumeTotal) * 100)
+    : 0;
 
   return (
     <div className="flex flex-col h-full">
@@ -736,18 +761,42 @@ export function SeriesDetail() {
 
             {/* Progress */}
             {totalCount > 0 && (
-              <div className="mb-4 max-w-xs">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-mangarr-muted text-xs">
-                    {downloadedCount} of {totalCount} chapters downloaded
-                  </span>
-                  <span className="text-mangarr-muted text-xs">{progressPct}%</span>
-                </div>
-                <div className="h-1.5 bg-mangarr-border rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-mangarr-accent rounded-full transition-all duration-500"
-                    style={{ width: `${progressPct}%` }}
-                  />
+              <div className="mb-4 max-w-xs space-y-2">
+                {/* Volume progress — only shown when AniList volume total is available */}
+                {anilistVolumeTotal != null && anilistVolumeTotal > 0 && (
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-mangarr-muted text-xs">
+                        Volumes: {ownedVolumeCount} / {anilistVolumeTotal}
+                        <span className="text-mangarr-disabled ml-1">(AniList)</span>
+                      </span>
+                      <span className="text-mangarr-muted text-xs">{volumeProgressPct}%</span>
+                    </div>
+                    <div className="h-1.5 bg-mangarr-border rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-mangarr-accent rounded-full transition-all duration-500"
+                        style={{ width: `${volumeProgressPct}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+                {/* Chapter progress */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-mangarr-muted text-xs">
+                      Chapters: {downloadedCount} of {anilistChapterTotal != null ? anilistChapterTotal : totalCount}
+                      {anilistChapterTotal != null && (
+                        <span className="text-mangarr-disabled ml-1">(AniList)</span>
+                      )}
+                    </span>
+                    <span className="text-mangarr-muted text-xs">{chapterProgressPct}%</span>
+                  </div>
+                  <div className="h-1.5 bg-mangarr-border rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-mangarr-accent rounded-full transition-all duration-500"
+                      style={{ width: `${chapterProgressPct}%` }}
+                    />
+                  </div>
                 </div>
               </div>
             )}
@@ -826,6 +875,15 @@ export function SeriesDetail() {
                 leftIcon={<RefreshCw className="w-4 h-4" />}
               >
                 Refresh Metadata
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                loading={isRefreshingAnilist}
+                onClick={() => refreshAnilist()}
+                leftIcon={<RefreshCw className="w-4 h-4" />}
+              >
+                Refresh AniList
               </Button>
               <Button
                 variant="secondary"

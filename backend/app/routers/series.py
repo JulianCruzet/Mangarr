@@ -371,6 +371,28 @@ async def refresh_series(series_id: int, db: Session = Depends(get_db)):
     return SeriesResponse.model_validate(series)
 
 
+@router.post("/{series_id}/refresh-anilist")
+async def refresh_anilist(series_id: int, db: Session = Depends(get_db)):
+    """Manually trigger an AniList lookup and save volumes/chapters totals."""
+    series = db.query(Series).filter(Series.id == series_id).first()
+    if not series:
+        raise HTTPException(status_code=404, detail="Series not found")
+    from app.providers.anilist import search_anilist
+    data = await search_anilist(series.title)
+    if not data:
+        raise HTTPException(status_code=404, detail="No AniList match found")
+    series.anilist_id = data.get("id")
+    series.anilist_volumes = data.get("volumes")
+    series.anilist_chapters = data.get("chapters")
+    db.commit()
+    db.refresh(series)
+    return {
+        "anilist_id": series.anilist_id,
+        "anilist_volumes": series.anilist_volumes,
+        "anilist_chapters": series.anilist_chapters,
+    }
+
+
 @router.get("/{series_id}/files", response_model=List[SeriesFileResponse])
 def list_series_files(series_id: int, db: Session = Depends(get_db)):
     """List all physical files matched to this series, with their chapter mapping."""

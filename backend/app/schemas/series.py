@@ -49,6 +49,9 @@ class SeriesResponse(SeriesBase):
     series_folder: Optional[str] = None
     metadata_updated_at: Optional[datetime] = None
     created_at: datetime
+    anilist_id: Optional[int] = None
+    anilist_volumes: Optional[int] = None
+    anilist_chapters: Optional[int] = None
 
     model_config = {"from_attributes": True}
 
