@@ -27,6 +27,9 @@ export interface Series {
   chapter_count?: number;
   downloaded_count?: number;
   missing_count?: number;
+  anilist_id?: number | null;
+  anilist_volumes?: number | null;
+  anilist_chapters?: number | null;
 }
 
 export interface Volume {
